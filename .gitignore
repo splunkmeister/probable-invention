@@ -8,6 +8,7 @@ CIS_Microsoft_Windows_Server_2025_Benchmark_v2.0.0.pdf
 
 # Runtime artifacts produced by the scripts
 GPO-Backups/
+Logs/
 *.log
 result*.csv
 rsop*.html

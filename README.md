@@ -136,6 +136,28 @@ Full procedure, per-role validation checklist, and rollback options are in [`RUN
 
 ---
 
+## Logging
+
+**Script logs (what the automation did).** Every script writes a timestamped PowerShell transcript —
+the full run, including warnings and errors — and prints the path at start and end:
+
+| Script | Default log | Override |
+|--------|-------------|----------|
+| `Create-CIS-*-GPO.ps1` | `.\Logs\Create-CIS-<scope>-<timestamp>.log` | `-LogPath` |
+| `Apply-CIS-Local.ps1` | `%windir%\Temp\CIS-Apply-<scope>.log` (+ `secedit` log `%windir%\Temp\CIS-secedit-<scope>.log`) | `-LogPath` |
+| `Rollback-CIS-GPO.ps1` | `.\Logs\Rollback-CIS-<scope>-<timestamp>.log` | `-LogPath` |
+| `Test-CIS-Compliance.ps1` | `.\Logs\Test-CIS-<scope>-<timestamp>.log` | `-LogPath`; machine-readable results via `-CsvPath` |
+
+**Native logs (what happened when the policy applied on a server)** — already built into Windows:
+
+- **Group Policy processing:** Event Viewer → *Applications and Services Logs → Microsoft → Windows →
+  GroupPolicy → Operational* (and the System log, source `GroupPolicy`).
+- **What actually applied / who won:** `gpresult /h C:\rsop.html` (or `/r`).
+- **Security template (INF) application:** `%windir%\security\logs\winlogon.log`; dump current state with
+  `secedit /export /cfg C:\current.inf`.
+- **Advanced Audit Policy in effect:** the **Security** event log; current config via `auditpol /get /category:*`.
+- **Firewall:** `%SystemRoot%\System32\logfiles\firewall\pfirewall.log` (this baseline turns logging on).
+
 ## Validation status
 
 - All PowerShell scripts pass the **PowerShell language parser**.

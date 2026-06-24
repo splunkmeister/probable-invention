@@ -28,6 +28,9 @@
   the baseline go live, so it is intentionally separate.
 .PARAMETER NoLink
   Force build-only: never link, even if -TargetOU is supplied. Belt-and-braces for change windows.
+.PARAMETER LogPath
+  Transcript log file. Defaults to .\Logs\Create-CIS-<scope>-<timestamp>.log next to the script.
+  The full run (every action, warning, and error) is captured there.
 .PARAMETER WhatIf
   Preview everything (create/registry/firewall/INF/audit/link) and change nothing.
 .EXAMPLE
@@ -41,10 +44,24 @@
 param(
     [string] $TargetOU,                  # omit to build without linking (safe default)
     [switch] $NoLink,                    # never link, even if -TargetOU is given
+    [string] $LogPath,                   # log file; default: .\Logs\Create-CIS-<scope>-<timestamp>.log
     [string] $ScriptRoot = $PSScriptRoot
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ---- Logging: full transcript of this run ---------------------------------
+if (-not $LogPath) {
+    $LogPath = Join-Path $ScriptRoot ("Logs\Create-CIS-DC-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+}
+try {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+    Start-Transcript -Path $LogPath -Force | Out-Null
+    $script:Transcribing = $true
+} catch { $script:Transcribing = $false; Write-Warning "Could not start transcript: $($_.Exception.Message)" }
+Write-Host "Log file: $LogPath" -ForegroundColor DarkCyan
+Write-Host ("Run by {0} on {1} at {2:u}" -f $env:USERNAME, $env:COMPUTERNAME, (Get-Date)) -ForegroundColor DarkCyan
+
 Import-Module GroupPolicy    -ErrorAction Stop
 Import-Module ActiveDirectory -ErrorAction Stop
 
@@ -193,3 +210,5 @@ if ($NoLink) {
 Write-Host "`n=== '$GpoName' build complete ===" -ForegroundColor Cyan
 Write-Host "Next: gpupdate /force + reboot on a PILOT node, then validate against" -ForegroundColor Cyan
 Write-Host "PotentiallyDisruptiveSettings.md and run a CIS-CAT assessment before widening scope." -ForegroundColor Cyan
+Write-Host "Full log: $LogPath" -ForegroundColor DarkCyan
+if ($script:Transcribing) { try { Stop-Transcript | Out-Null } catch {} }

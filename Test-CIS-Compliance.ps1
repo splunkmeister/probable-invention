@@ -25,6 +25,7 @@
 param(
     [Parameter(Mandatory)][ValidateSet('Member','DC')][string] $Scope,
     [string] $CsvPath,
+    [string] $LogPath,
     [switch] $IncludeUser
 )
 
@@ -32,6 +33,16 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Warning "Run elevated for accurate results (secedit/auditpol need admin)."
 }
+
+# ---- Logging: full transcript of this assessment --------------------------
+if (-not $LogPath) {
+    $LogPath = Join-Path $PSScriptRoot ("Logs\Test-CIS-{0}-{1:yyyyMMdd-HHmmss}.log" -f $Scope, (Get-Date))
+}
+try {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+    Start-Transcript -Path $LogPath -Force | Out-Null; $script:Transcribing = $true
+} catch { $script:Transcribing = $false }
+Write-Host "Log file: $LogPath" -ForegroundColor DarkCyan
 $scopeFilter = if ($Scope -eq 'DC') { @('Both','DC') } else { @('Both','MS') }
 $results = New-Object System.Collections.Generic.List[object]
 function Add-Result($id,$area,$setting,$expected,$actual,$result){
@@ -453,3 +464,5 @@ $fail = ($results | Where-Object Result -eq 'FAIL').Count
 if ($fail) { Write-Host "$fail setting(s) NON-COMPLIANT - see FAIL rows above." -ForegroundColor Red }
 else { Write-Host "No FAIL rows. Review any REVIEW/SKIP items manually." -ForegroundColor Green }
 if ($CsvPath) { $results | Export-Csv -Path $CsvPath -NoTypeInformation -Encoding UTF8; Write-Host "Full results -> $CsvPath" }
+Write-Host "Full log: $LogPath" -ForegroundColor DarkCyan
+if ($script:Transcribing) { try { Stop-Transcript | Out-Null } catch {} }

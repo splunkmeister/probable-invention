@@ -39,10 +39,23 @@ param(
     [string] $GpoName,
     [ValidateSet('DisableLink','Unlink','Remove','Restore')][string] $Action = 'DisableLink',
     [string] $BackupPath = (Join-Path $PSScriptRoot 'GPO-Backups'),
-    [string] $TargetOU
+    [string] $TargetOU,
+    [string] $LogPath
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ---- Logging ---------------------------------------------------------------
+if (-not $LogPath) {
+    $LogPath = Join-Path $PSScriptRoot ("Logs\Rollback-CIS-{0}-{1:yyyyMMdd-HHmmss}.log" -f $Scope, (Get-Date))
+}
+try {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+    Start-Transcript -Path $LogPath -Force | Out-Null; $script:Transcribing = $true
+} catch { $script:Transcribing = $false; Write-Warning "Could not start transcript: $($_.Exception.Message)" }
+Write-Host "Log file: $LogPath" -ForegroundColor DarkCyan
+Write-Host ("Run by {0} on {1} at {2:u}" -f $env:USERNAME, $env:COMPUTERNAME, (Get-Date)) -ForegroundColor DarkCyan
+
 Import-Module GroupPolicy     -ErrorAction Stop
 Import-Module ActiveDirectory -ErrorAction Stop
 
@@ -138,3 +151,5 @@ switch ($Action) {
 }
 
 Write-Host "`nDone. Run 'gpupdate /force' on affected hosts to pull the change." -ForegroundColor Cyan
+Write-Host "Full log: $LogPath" -ForegroundColor DarkCyan
+if ($script:Transcribing) { try { Stop-Transcript | Out-Null } catch {} }
