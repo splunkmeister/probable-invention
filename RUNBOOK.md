@@ -61,15 +61,20 @@ version sync, and the OU link, **without making any change**. Do the same for th
 
 ---
 
-## 3. Build + link to the PILOT OU
+## 3. Build the GPO (without linking), then link deliberately
+
+**Linking is opt-in** — without `-TargetOU` the GPO is built but affects no servers. Build first, review
+in GPMC, then link to a pilot OU:
 
 ```powershell
-.\Create-CIS-MemberServer-GPO.ps1 -TargetOU "OU=Pilot Servers,DC=corp,DC=com"
+.\Create-CIS-MemberServer-GPO.ps1                                       # build only, NOT linked
+#  ...review the GPO in GPMC...
+.\Create-CIS-MemberServer-GPO.ps1 -TargetOU "OU=Pilot Servers,DC=corp,DC=com"   # now link (goes live)
 .\Create-CIS-DC-GPO.ps1           -TargetOU "OU=Pilot DCs,DC=corp,DC=com"
 ```
-Watch the `--- Verification ---` block: all five checks should read **True** (INF staged, audit staged,
-Security CSE, Audit CSE, version in sync). If any is False, the script prints the GPMC
-`Import Policy…` fallback — use it before continuing.
+`-NoLink` forces build-only even if `-TargetOU` is supplied. Watch the `--- Verification ---` block:
+all five checks should read **True** (INF staged, audit staged, Security CSE, Audit CSE, version in sync).
+If any is False, the script prints the GPMC `Import Policy…` fallback — use it before linking.
 
 ---
 

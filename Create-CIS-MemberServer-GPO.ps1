@@ -6,6 +6,10 @@
   Idempotent. Run from a domain-joined management host (or DC) with RSAT installed,
   as a user with GPO create/link rights. All files must stay in the same folder.
 
+  SAFE BY DEFAULT: building the GPO affects NO servers. The GPO only goes live when it is
+  LINKED, which happens only if you pass -TargetOU (and not -NoLink). Omit -TargetOU to build
+  and review the GPO first, then link it deliberately to a pilot OU.
+
   Delivery per setting type:
     * Administrative Templates / registry  -> Set-GPRegistryValue           (native)
     * Windows Firewall profiles (section 9)-> Set-NetFirewallProfile         (native)
@@ -18,13 +22,25 @@
       LGPO.exe /s "CIS_Server2025_Member_Level1.inf"        # applies the template locally
       auditpol /get /category:*    # confirm audit; secedit /export to confirm the rest
 .PARAMETER TargetOU
-  Distinguished name of the OU to link, e.g. "OU=Servers,DC=company,DC=com". Leave blank to skip linking.
+  Distinguished name of the OU to link, e.g. "OU=Servers,DC=company,DC=com".
+  LINKING IS OPT-IN: if you omit -TargetOU the GPO is built and configured but NOT linked
+  (it affects no servers until you link it deliberately). Linking is the only step that makes
+  the baseline go live, so it is intentionally separate.
+.PARAMETER NoLink
+  Force build-only: never link, even if -TargetOU is supplied. Belt-and-braces for change windows.
 .PARAMETER WhatIf
-  Build/stage everything but do not link the GPO.
+  Preview everything (create/registry/firewall/INF/audit/link) and change nothing.
+.EXAMPLE
+  .\Create-CIS-MemberServer-GPO.ps1 -WhatIf                                  # preview, no changes
+.EXAMPLE
+  .\Create-CIS-MemberServer-GPO.ps1                                          # build + configure, do NOT link
+.EXAMPLE
+  .\Create-CIS-MemberServer-GPO.ps1 -TargetOU "OU=Servers,DC=company,DC=com"                       # build + configure + link (goes live)
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string] $TargetOU   = "OU=Servers,DC=company,DC=com",
+    [string] $TargetOU,                  # omit to build without linking (safe default)
+    [switch] $NoLink,                    # never link, even if -TargetOU is given
     [string] $ScriptRoot = $PSScriptRoot
 )
 
@@ -151,22 +167,27 @@ if (-not $gpo) {
     }
 }
 
-# ---- 8) Link to the target OU ----------------------------------------------
-if ($TargetOU) {
+# ---- 8) Link to the target OU (OPT-IN: only with -TargetOU, never with -NoLink) ----
+if ($NoLink) {
+    Write-Host "[i] -NoLink set: GPO built and configured but NOT linked (affects no servers)." -ForegroundColor Yellow
+} elseif (-not $TargetOU) {
+    Write-Host "[i] No -TargetOU: GPO built but NOT linked (affects no servers)." -ForegroundColor Yellow
+    Write-Host "    When ready, link it deliberately - to a PILOT OU first:" -ForegroundColor Yellow
+    Write-Host "      New-GPLink -Name '$GpoName' -Target '<OU distinguished name>' -LinkEnabled Yes" -ForegroundColor Yellow
+} else {
     $ouOk = Get-ADOrganizationalUnit -LDAPFilter "(distinguishedName=$TargetOU)" -ErrorAction SilentlyContinue
-    if ($ouOk) {
+    if (-not $ouOk) {
+        Write-Warning "Target OU '$TargetOU' not found - GPO was NOT linked. Verify the DN."
+    } else {
         $already = (Get-GPInheritance -Target $TargetOU).GpoLinks.DisplayName -contains $GpoName
         if ($already) {
             Write-Host "[=] GPO already linked to $TargetOU" -ForegroundColor Yellow
-        } elseif ($PSCmdlet.ShouldProcess($TargetOU, "Link GPO '$GpoName'")) {
+        } elseif ($PSCmdlet.ShouldProcess($TargetOU, "LINK GPO '$GpoName' - goes LIVE for all servers in this OU at next gpupdate")) {
             New-GPLink -Name $GpoName -Target $TargetOU -LinkEnabled Yes | Out-Null
-            Write-Host "[+] Linked GPO to $TargetOU" -ForegroundColor Green
+            Write-Host "[+] Linked GPO to $TargetOU - applies at next gpupdate/reboot." -ForegroundColor Green
+            Write-Host "    Undo: .\Rollback-CIS-GPO.ps1 -Scope $Scope -Action DisableLink" -ForegroundColor Cyan
         }
-    } else {
-        Write-Warning "Target OU '$TargetOU' not found - link the GPO manually in GPMC."
     }
-} else {
-    Write-Host "[i] No TargetOU specified - GPO built but not linked." -ForegroundColor Yellow
 }
 
 Write-Host "`n=== '$GpoName' build complete ===" -ForegroundColor Cyan

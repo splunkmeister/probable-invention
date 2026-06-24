@@ -104,13 +104,19 @@ internally — the part that must be exact, which the Create scripts do and then
 
 ```powershell
 # On a domain-joined host with RSAT (GroupPolicy + ActiveDirectory):
-.\Create-CIS-MemberServer-GPO.ps1 -TargetOU "OU=Pilot,DC=corp,DC=com" -WhatIf   # 1. preview (no changes)
-.\Create-CIS-MemberServer-GPO.ps1 -TargetOU "OU=Pilot,DC=corp,DC=com"           # 2. build + link to PILOT OU
+.\Create-CIS-MemberServer-GPO.ps1 -WhatIf                            # 1. preview (no changes)
+.\Create-CIS-MemberServer-GPO.ps1                                    # 2. build WITHOUT linking (affects no servers)
+#    review the GPO in GPMC, then link DELIBERATELY to a pilot OU:
+.\Create-CIS-MemberServer-GPO.ps1 -TargetOU "OU=Pilot,DC=corp,DC=com"   # 3. link -> goes live at next gpupdate
 #    on a pilot node:  gpupdate /force ; reboot
-.\Test-CIS-Compliance.ps1 -Scope Member -CsvPath .\result.csv                   # 3. verify (target: 0 FAIL)
+.\Test-CIS-Compliance.ps1 -Scope Member -CsvPath .\result.csv        # 4. verify (target: 0 FAIL)
 #    validate role workloads against PotentiallyDisruptiveSettings.md, then widen scope
-.\Rollback-CIS-GPO.ps1 -Scope Member                                            # undo anytime (reversible)
+.\Rollback-CIS-GPO.ps1 -Scope Member                                 # undo anytime (DisableLink = reversible)
 ```
+
+> **Linking is opt-in.** The Create scripts build and configure the GPO but **do not link** unless you
+> pass `-TargetOU`. Linking is the only step that affects running servers. `-NoLink` forces build-only
+> even if an OU is given.
 
 Full procedure, per-role validation checklist, and rollback options are in [`RUNBOOK.md`](RUNBOOK.md).
 
