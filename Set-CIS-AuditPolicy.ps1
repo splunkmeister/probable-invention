@@ -58,11 +58,23 @@ $applicable = $Audit | Where-Object { $_.Scope -eq 'Both' -or $_.Scope -eq $Scop
 
 if ($Mode -eq 'Local') {
   Write-Host "Applying $($applicable.Count) audit subcategories locally via auditpol..." -ForegroundColor Cyan
+  # Apply by GUID (canonical, locale-independent). Subcategory *names* differ from the OS
+  # display names in places (e.g. CIS 'PNP Activity' = OS 'Plug and Play Events'), which makes
+  # /subcategory:"<name>" fail with 0x57 'The parameter is incorrect'. GUIDs avoid that entirely.
+  $ok = 0; $fail = 0
   foreach ($a in $applicable) {
-    & auditpol.exe /set /subcategory:"$($a.Sub)" $a.Flag.Split(' ') | Out-Null
-    Write-Host ("  {0,-12} {1,-40} {2}" -f $a.Id, $a.Sub, $a.Setting)
+    $argv = @('/set', "/subcategory:$($a.Guid)") + $a.Flag.Split(' ')
+    $out  = & auditpol.exe @argv 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      $ok++
+      Write-Host ("  [+] {0,-12} {1,-40} {2}" -f $a.Id, $a.Sub, $a.Setting)
+    } else {
+      $fail++
+      Write-Warning ("[{0}] {1} ({2}): {3}" -f $a.Id, $a.Sub, $a.Guid, ($out -join ' '))
+    }
   }
-  Write-Host "Done. Verify with: auditpol /get /category:*" -ForegroundColor Green
+  Write-Host "Audit subcategories: $ok applied, $fail failed." -ForegroundColor $(if ($fail) {'Yellow'} else {'Green'})
+  Write-Host "Verify with: auditpol /get /category:*" -ForegroundColor Cyan
 }
 elseif ($Mode -eq 'GpoCsv') {
   if (-not $GpoName -or -not $CsvPath) { throw "GpoCsv mode requires -GpoName and -CsvPath" }
