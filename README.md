@@ -73,10 +73,20 @@ internally — the part that must be exact, which the Create scripts do and then
 ### Orchestration
 | File | Purpose |
 |------|---------|
+| `Apply-CIS-Local.ps1` | **Build-time apply** to the local machine (no domain): `secedit` INF + registry + audit + firewall (supports `-WhatIf`) |
 | `Create-CIS-MemberServer-GPO.ps1` | Build + configure + link the Member GPO (supports `-WhatIf`) |
 | `Create-CIS-DC-GPO.ps1` | Build + configure + link the DC GPO (supports `-WhatIf`) |
 | `Test-CIS-Compliance.ps1` | Post-deployment verifier — actual-vs-expected PASS/FAIL per setting |
 | `Rollback-CIS-GPO.ps1` | Safe undo: disable-links / unlink / backup+delete / restore |
+
+### Two delivery models — pick one or both
+- **Build-time (local):** `Apply-CIS-Local.ps1` hardens each host during provisioning (golden image,
+  MDT/SCCM, Packer, Ansible/DSC) via `secedit /configure` + direct registry/audit/firewall. Deterministic,
+  no domain dependency, **no SYSVOL/AD changes** — but does not self-heal drift.
+- **Domain GPO:** `Create-CIS-*-GPO.ps1` stages the template into a GPO; clients apply it at refresh.
+  Central and self-healing, but mutates the domain.
+- **Both (common):** bake the baseline at build time, link a GPO for drift enforcement. Where both touch a
+  setting, the GPO wins (applied last).
 
 ### Documentation
 | File | Purpose |

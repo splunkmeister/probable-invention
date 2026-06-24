@@ -33,6 +33,22 @@ Edit per `ExceptionsAndManualSteps.md` **§1–§2** before building:
 
 ---
 
+## Alternative: build-time local apply (no domain GPO)
+
+If hardening happens during host build (golden image / MDT / SCCM / Packer / Ansible), apply the
+baseline locally instead of via GPO — deterministic and with no domain/SYSVOL changes:
+
+```powershell
+.\Apply-CIS-Local.ps1 -Scope Member -WhatIf    # preview
+.\Apply-CIS-Local.ps1 -Scope Member            # secedit INF + registry + audit + firewall, locally
+# reboot, then:  .\Test-CIS-Compliance.ps1 -Scope Member
+```
+
+This sets a known-good baseline but does **not** self-heal drift — pair it with the domain GPO below
+for ongoing enforcement if you want both. The GPO steps (sections 2–7) are for the domain model.
+
+---
+
 ## 2. Dry-run (preview — changes nothing)
 
 ```powershell
