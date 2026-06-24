@@ -1,0 +1,13 @@
+# Windows-targeted scripts and data keep CRLF line endings
+*.ps1  text eol=crlf
+*.csv  text eol=crlf
+
+# UTF-16 security templates: preserve bytes exactly (do not touch line endings/encoding)
+*.inf  binary
+
+# Binary documents
+*.xlsx binary
+*.pdf  binary
+
+# Markdown: normalise to LF
+*.md   text eol=lf

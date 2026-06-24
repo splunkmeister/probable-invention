@@ -1,0 +1,17 @@
+# CIS Benchmark source document — NOT redistributable.
+# CIS terms forbid hosting the benchmark (in any format) on a non-CIS site.
+CIS_Microsoft_Windows_Server_2025_Benchmark_v2.0.0.pdf
+*.pdf
+
+# Local tooling / settings
+.claude/
+
+# Runtime artifacts produced by the scripts
+GPO-Backups/
+*.log
+result*.csv
+rsop*.html
+
+# OS noise
+.DS_Store
+Thumbs.db
