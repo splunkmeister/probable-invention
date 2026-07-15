@@ -17,10 +17,18 @@
       Client-Side-Extension (CSE) registration and version bookkeeping that GPMC
       performs internally (the part that must be exact, done here and verified).
 
-  TESTING TIP: to validate the INF on a standalone box before trusting the GPO, use
-  Microsoft LGPO.exe (Security Compliance Toolkit) against LOCAL policy:
-      LGPO.exe /s "CIS_Server2025_Member_Level1.inf"        # applies the template locally
-      auditpol /get /category:*    # confirm audit; secedit /export to confirm the rest
+  TESTING TIP: to validate this template before trusting the GPO, apply it to a throwaway
+  DOMAIN-JOINED test server:
+      .\Apply-CIS-Local.ps1 -Scope Member -WhatIf     # preview
+      .\Apply-CIS-Local.ps1 -Scope Member             # apply locally, then verify:
+      .\Test-CIS-Compliance.ps1 -Scope Member
+  (or LGPO.exe /s "CIS_Server2025_Member_Level1.inf" against LOCAL policy, same effect.)
+
+  DO NOT test this template on a standalone / workgroup box. It denies logon rights to
+  S-1-5-113 'Local account' and S-1-5-114, which on a non-domain-joined host match EVERY
+  account - RDP and remote administration are denied to every administrator, stranding any
+  host without console access. CIS says so in 2.2.26's own Impact text. Workgroup hosts have
+  their own benchmark: use Apply-CIS-Local.ps1 -Scope Standalone.
 .PARAMETER TargetOU
   Distinguished name of the OU to link, e.g. "OU=Servers,DC=company,DC=com".
   LINKING IS OPT-IN: if you omit -TargetOU the GPO is built and configured but NOT linked

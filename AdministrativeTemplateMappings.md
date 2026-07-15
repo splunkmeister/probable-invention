@@ -1,5 +1,16 @@
 # Administrative Template Settings - CIS Windows Server 2025 Benchmark v2.0.0 (Level 1)
 
+> **Scope: Member Server / Domain Controller only.** These mappings come from the CIS Windows
+> Server 2025 Benchmark **v2.0.0** and are applied by `RegistrySettings.ps1`.
+>
+> **Standalone (workgroup) hosts use a different document** — the CIS Stand-alone Benchmark
+> **v1.0.0** — with its own numbering and a different set of settings. Its Administrative-Template
+> mappings live in `RegistrySettings-Standalone.ps1` (156 settings) and
+> `StandaloneImplementationMatrix.csv`. **Do not cross-reference IDs between the two:** standalone
+> `2.2.16`/`2.2.20` are the settings this document calls `2.2.21`/`2.2.26`, and several settings
+> here (18.4.1 `LocalAccountTokenFilterPolicy`, Windows LAPS 18.9.26.x) are **not in the
+> Stand-alone benchmark at all**. See [`ExceptionsAndManualSteps.md` §4](ExceptionsAndManualSteps.md).
+
 Every setting below lives under **Computer Configuration \ Policies \ Administrative Templates**
 (or **User Configuration** for section 19) and is realised as a registry policy value.
 Each block lists the GPO path, the CIS desired value, the backing registry value, and an
@@ -2539,7 +2550,14 @@ Set-GPRegistryValue `
 - **Setting:** Configure Windows Defender SmartScreen
 - **Value:** Enabled: Warn and prevent bypass
 - **Applies to:** Member Servers + Domain Controllers
-- **Registry:** `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen` = `1` (REG_DWORD)
+- **Registry (both values are required):**
+  - `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen` = `1` (REG_DWORD)
+  - `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\ShellSmartScreenLevel` = `Block` (REG_SZ)
+
+> This recommendation takes **two** values — the benchmark states *"a REG_DWORD value of 1
+> (EnableSmartScreen) and REG_SZ value of Block (ShellSmartScreenLevel)"*. `EnableSmartScreen`
+> alone turns SmartScreen on but still lets users **bypass** the warning, which is precisely what
+> *"Warn and prevent bypass"* is asking for.
 
 ```powershell
 Set-GPRegistryValue `
@@ -2548,6 +2566,13 @@ Set-GPRegistryValue `
   -ValueName "EnableSmartScreen" `
   -Type DWord `
   -Value 1
+
+Set-GPRegistryValue `
+  -Name $Gpo.DisplayName `
+  -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" `
+  -ValueName "ShellSmartScreenLevel" `
+  -Type String `
+  -Value "Block"
 ```
 
 ### 18.10.81.2 - 'Allow Windows Ink Workspace' is set to 'Enabled: On, but disallow access above lock' OR 'Enabled: Disabled'
@@ -2828,7 +2853,13 @@ Set-GPRegistryValue `
 - **Setting:** Select when Quality Updates are received
 - **Value:** Enabled: 0 days
 - **Applies to:** Member Servers + Domain Controllers
-- **Registry:** `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DeferQualityUpdates` = `1` (REG_DWORD)
+- **Registry (both values are required):**
+  - `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DeferQualityUpdates` = `1` (REG_DWORD)
+  - `HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DeferQualityUpdatesPeriodInDays` = `0` (REG_DWORD)
+
+> This recommendation takes **two** values — the benchmark states *"a REG_DWORD value of 1
+> (DeferQualityUpdates) and 0 (DeferQualityUpdatesPeriodInDays)"*. `DeferQualityUpdates` alone
+> switches deferral **on** without setting the period, which is the opposite of *"Enabled: 0 days"*.
 
 ```powershell
 Set-GPRegistryValue `
@@ -2837,6 +2868,13 @@ Set-GPRegistryValue `
   -ValueName "DeferQualityUpdates" `
   -Type DWord `
   -Value 1
+
+Set-GPRegistryValue `
+  -Name $Gpo.DisplayName `
+  -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" `
+  -ValueName "DeferQualityUpdatesPeriodInDays" `
+  -Type DWord `
+  -Value 0
 ```
 
 ## Center for Internet Security (CIS)

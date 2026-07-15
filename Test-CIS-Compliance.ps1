@@ -10,20 +10,27 @@
     * User Rights Assignment (section 2.2)                                     -> secedit /export
     * Account / lockout policy (section 1)                                     -> secedit /export
     * Windows Firewall profiles (section 9)                                    -> Get-NetFirewallProfile
-  Run elevated. -Scope must match the GPO you applied.
+  Run elevated. -Scope must match the GPO (or local apply) you deployed.
 .PARAMETER Scope
-  Member  -> verify against the Member Server package
-  DC      -> verify against the Domain Controller package
+  Member      -> verify against the Member Server package    (Benchmark v2.0.0, L1 Member Server)
+  DC          -> verify against the Domain Controller package (Benchmark v2.0.0, L1 DC)
+  Standalone  -> verify against the workgroup package         (Stand-alone Benchmark v1.0.0, L1)
+
+  Standalone is a different benchmark with its own numbering and its own data files, so its
+  results are graded from RegistrySettings-Standalone.ps1 + CIS-Standalone-Data.ps1 and its own
+  INF - not from the Member tables in this script.
 .PARAMETER CsvPath
   Optional path to also write the full result table as CSV.
 .PARAMETER IncludeUser
   Also check HKCU (section 19) settings in the CURRENT user's hive (per-user policy).
 .EXAMPLE
   .\Test-CIS-Compliance.ps1 -Scope Member -CsvPath .\cis-result.csv
+.EXAMPLE
+  .\Test-CIS-Compliance.ps1 -Scope Standalone -CsvPath .\standalone-result.csv
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Member','DC')][string] $Scope,
+    [Parameter(Mandatory)][ValidateSet('Member','DC','Standalone')][string] $Scope,
     [string] $CsvPath,
     [string] $LogPath,
     [switch] $IncludeUser
@@ -43,7 +50,22 @@ try {
     Start-Transcript -Path $LogPath -Force | Out-Null; $script:Transcribing = $true
 } catch { $script:Transcribing = $false }
 Write-Host "Log file: $LogPath" -ForegroundColor DarkCyan
-$scopeFilter = if ($Scope -eq 'DC') { @('Both','DC') } else { @('Both','MS') }
+
+$ScopeMod = Join-Path $PSScriptRoot 'CIS-Scope.ps1'
+if (-not (Test-Path -LiteralPath $ScopeMod)) { throw "Missing required file: $ScopeMod" }
+. $ScopeMod
+
+$scopeFilter = Get-CISScopeFilter -Scope $Scope
+$pi = Get-CISProfileInfo -Scope $Scope
+Write-Host ("Grading against: {0} {1}, {2}" -f $pi.Benchmark, $pi.Version, $pi.Profile) -ForegroundColor Cyan
+
+# Warn when the box's real role does not match what we are grading it against - otherwise the
+# report is a confident-looking list of results for the wrong benchmark profile.
+$hostRole = try { Get-CISHostRole } catch { 'Unknown' }
+if ($hostRole -ne 'Unknown' -and $hostRole -ne $Scope) {
+    Write-Warning "This host is '$hostRole' but you are verifying the '$Scope' profile. Results below grade against '$Scope'."
+}
+
 $results = New-Object System.Collections.Generic.List[object]
 function Add-Result($id,$area,$setting,$expected,$actual,$result){
     $results.Add([pscustomobject]@{ Id=$id; Area=$area; Setting=$setting; Expected=$expected; Actual=$actual; Result=$result })
@@ -253,6 +275,9 @@ $RegistryChecks = @(
   @{ Id="18.10.58.1"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Internet Explorer\Feeds"; Name="DisableEnclosureDownload"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.10.59.3"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\Windows Search"; Name="AllowIndexingEncryptedStoresOrItems"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.10.77.2.1"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\System"; Name="EnableSmartScreen"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
+  # Both halves of 18.10.77.2.1 are checked. Checking only EnableSmartScreen reported PASS while
+  # ShellSmartScreenLevel was never set - a half-applied recommendation that looked compliant.
+  @{ Id="18.10.77.2.1"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\System"; Name="ShellSmartScreenLevel"; Expected="Block"; Type="REG_SZ"; Scope="Both" }
   @{ Id="18.10.81.2"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\WindowsInkWorkspace"; Name="AllowWindowsInkWorkspace"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.10.82.1"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\Installer"; Name="EnableUserControl"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.10.82.2"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\Installer"; Name="AlwaysInstallElevated"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
@@ -270,6 +295,8 @@ $RegistryChecks = @(
   @{ Id="18.10.94.2.2"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"; Name="ScheduledInstallDay"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.10.94.4.1"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="ManagePreviewBuildsPolicyValue"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.10.94.4.2"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="DeferQualityUpdates"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
+  # Both halves of 18.10.94.4.2 - see the note on 18.10.77.2.1 above.
+  @{ Id="18.10.94.4.2"; Hive="HKLM"; Path="SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="DeferQualityUpdatesPeriodInDays"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.11.1"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp"; Name="DisableWpad"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="18.11.2"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings"; Name="DisableProxyAuthenticationSchemes"; Expected="256"; Type="REG_DWORD"; Scope="Both" }
 )
@@ -382,16 +409,74 @@ $SystemAccessChecks = @(
   @{ Id="2.3.11.5"; Token="ForceLogoffWhenHourExpire"; Expected="1"; Scope="Both" }
 )
 
+# ============================ Standalone: swap in its own tables =============
+# Standalone implements a different benchmark with different numbering, so none of the tables
+# above apply to it. Its expectations are read from the artifacts that were actually applied:
+# the standalone data files, and the standalone INF for user rights / account policy. Reading
+# the INF rather than restating its values keeps apply and verify from drifting apart.
+if ($Scope -eq 'Standalone') {
+    $DataMod = Join-Path $PSScriptRoot 'CIS-Standalone-Data.ps1'
+    $RegMod  = Join-Path $PSScriptRoot 'RegistrySettings-Standalone.ps1'
+    $InfFile = Join-Path $PSScriptRoot 'CIS_Server2025_Standalone_Level1.inf'
+    foreach ($f in @($DataMod, $RegMod, $InfFile)) {
+        if (-not (Test-Path -LiteralPath $f)) { throw "Missing required file: $f" }
+    }
+    . $DataMod
+    . $RegMod
+
+    $scopeFilter = @('MS','USER')
+
+    $RegistryChecks = @(
+        $CISStandaloneRegistry | Where-Object { $_.Key -like 'HKLM\*' } | ForEach-Object {
+            @{ Id = $_.Id; Hive = 'HKLM'; Path = ($_.Key -replace '^HKLM\\',''); Name = $_.Name
+               Expected = "$($_.Value)"; Type = $_.Type; Scope = 'MS' }
+        }
+    )
+    $UserRegistryChecks = @(
+        $CISStandaloneRegistry | Where-Object { $_.Key -like 'HKCU\*' } | ForEach-Object {
+            @{ Id = $_.Id; Hive = 'HKCU'; Path = ($_.Key -replace '^HKCU\\',''); Name = $_.Name
+               Expected = "$($_.Value)"; Type = $_.Type; Scope = 'USER' }
+        }
+    )
+    $AuditChecks = @(
+        $CISStandaloneAudit | ForEach-Object {
+            @{ Id = $_.Id; Sub = $_.Sub; Guid = $_.Guid; Expected = $_.Setting; Scope = 'MS' }
+        }
+    )
+
+    # Parse the standalone INF for the two secedit-delivered areas.
+    $infLines = Get-Content -LiteralPath $InfFile -Encoding Unicode
+    $section  = ''
+    $pr = @(); $sa = @(); $lastId = ''
+    foreach ($line in $infLines) {
+        $t = $line.Trim()
+        if ($t -match '^\[(.+)\]$') { $section = $Matches[1]; continue }
+        if ($t -match '^;\s*([\d.]+)\s*$') { $lastId = $Matches[1]; continue }
+        if (-not $t -or $t.StartsWith(';')) { continue }
+        if ($section -eq 'Privilege Rights' -and $t -match '^(Se\w+)\s*=\s*(.*)$') {
+            $pr += @{ Id = $lastId; Const = $Matches[1]; Expected = ($Matches[2].Trim() -replace ',', ';'); Scope = 'MS' }
+        }
+        elseif ($section -eq 'System Access' -and $t -match '^(\w+)\s*=\s*(.*)$') {
+            $sa += @{ Id = $lastId; Token = $Matches[1]; Expected = $Matches[2].Trim().Trim('"'); Scope = 'MS' }
+        }
+    }
+    $PrivilegeChecks     = $pr
+    $SystemAccessChecks  = $sa
+    Write-Host ("Standalone tables: {0} registry, {1} user-registry, {2} audit, {3} user rights, {4} account policy" `
+                -f $RegistryChecks.Count, $UserRegistryChecks.Count, $AuditChecks.Count, $pr.Count, $sa.Count) -ForegroundColor DarkCyan
+}
+
 # ============================ 1) Registry ============================
 function Test-RegistrySet($checks,$area){
     foreach($c in ($checks | Where-Object { $_.Scope -in $scopeFilter })){
+        $exp  = @{ Expected = "$($c.Expected)"; IsDeviation = $false }
         $full = "$($c.Hive):\$($c.Path)"
         $actual = $null
         try { $actual = (Get-ItemProperty -Path $full -Name $c.Name -ErrorAction Stop).$($c.Name) } catch { $actual = $null }
-        if ($null -eq $actual) { Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $c.Expected "<not set>" "FAIL"; continue }
+        if ($null -eq $actual) { Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $exp.Expected "<not set>" "FAIL"; continue }
         $a = "$actual"
-        $res = if ($a -eq $c.Expected) { "PASS" } else { "FAIL" }
-        Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $c.Expected $a $res
+        $res = if ($a -ne $exp.Expected) { "FAIL" } elseif ($exp.IsDeviation) { "DEVIATION" } else { "PASS" }
+        Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $exp.Expected $a $res
     }
 }
 Test-RegistrySet $RegistryChecks "Registry"
@@ -422,16 +507,19 @@ function Norm-Sids($s){
 
 # 3) Privilege Rights
 foreach($c in ($PrivilegeChecks | Where-Object { $_.Scope -in $scopeFilter })){
+    $exp = @{ Expected = "$($c.Expected)"; IsDeviation = $false }
     $line = Get-SecLine $c.Const
     $actualRaw = if ($line) { ($line -split '=',2)[1].Trim() } else { "" }
-    $expSet = Norm-Sids $c.Expected
+    $expSet = Norm-Sids $exp.Expected
     $actSet = Norm-Sids $actualRaw
     $expDisp = if ($expSet.Count) { ($expSet -join ',') } else { "<none>" }
     $actDisp = if ($actSet.Count) { ($actSet -join ',') } else { "<none>" }
     # ignore unresolved friendly names (e.g. PrintSpoolerService) for the strict compare
     $expCmp = $expSet | Where-Object { $_ -like 'S-1-*' }
     $actCmp = $actSet | Where-Object { $_ -like 'S-1-*' }
-    $res = if ((($expCmp -join ',') -eq ($actCmp -join ',')) ) { if ($expSet.Count -eq $expCmp.Count) { "PASS" } else { "REVIEW" } } else { "FAIL" }
+    $res = if ((($expCmp -join ',') -eq ($actCmp -join ',')) ) {
+               if ($expSet.Count -ne $expCmp.Count) { "REVIEW" } elseif ($exp.IsDeviation) { "DEVIATION" } else { "PASS" }
+           } else { "FAIL" }
     Add-Result $c.Id "UserRights" $c.Const $expDisp $actDisp $res
 }
 
@@ -444,7 +532,10 @@ foreach($c in ($SystemAccessChecks | Where-Object { $_.Scope -in $scopeFilter })
 }
 
 # ============================ 5) Firewall profiles (section 9) ============================
-foreach($p in 'Domain','Private','Public'){
+# The Stand-alone benchmark has no Domain-profile recommendations (a workgroup host never uses
+# that profile), so checking it would report a result for something the benchmark never asked for.
+$fwProfiles = if ($Scope -eq 'Standalone') { @('Private','Public') } else { @('Domain','Private','Public') }
+foreach($p in $fwProfiles){
     try {
         $fp = Get-NetFirewallProfile -Profile $p -ErrorAction Stop
         $en = "$($fp.Enabled)"; $resEn = if ($en -in 'True','1') { "PASS" } else { "FAIL" }
@@ -463,6 +554,18 @@ Write-Host ("CIS S2025 L1 ({0}) compliance: {1}  (total {2})" -f $Scope, ($summa
 $fail = ($results | Where-Object Result -eq 'FAIL').Count
 if ($fail) { Write-Host "$fail setting(s) NON-COMPLIANT - see FAIL rows above." -ForegroundColor Red }
 else { Write-Host "No FAIL rows. Review any REVIEW/SKIP items manually." -ForegroundColor Green }
+
+# The standalone profile has a handful of recommendations that cannot be auto-verified because
+# they were never auto-applied (lists, SDDL, site-specific text). Listing them keeps a clean
+# report from being mistaken for full benchmark coverage.
+if ($Scope -eq 'Standalone' -and $CISStandaloneReview) {
+    Write-Host ""
+    Write-Host ("$($CISStandaloneReview.Count) recommendation(s) are NOT covered by this report - they are not") -ForegroundColor Yellow
+    Write-Host  "auto-applied and must be checked by hand (ExceptionsAndManualSteps.md section 4):" -ForegroundColor Yellow
+    foreach ($r in $CISStandaloneReview) {
+        Write-Host ("  [REVIEW] {0,-14} {1}" -f $r.Id, $r.Title) -ForegroundColor DarkYellow
+    }
+}
 if ($CsvPath) { $results | Export-Csv -Path $CsvPath -NoTypeInformation -Encoding UTF8; Write-Host "Full results -> $CsvPath" }
 Write-Host "Full log: $LogPath" -ForegroundColor DarkCyan
 if ($script:Transcribing) { try { Stop-Transcript | Out-Null } catch {} }

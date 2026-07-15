@@ -17,10 +17,16 @@
       Client-Side-Extension (CSE) registration and version bookkeeping that GPMC
       performs internally (the part that must be exact, done here and verified).
 
-  TESTING TIP: to validate the INF on a standalone box before trusting the GPO, use
-  Microsoft LGPO.exe (Security Compliance Toolkit) against LOCAL policy:
-      LGPO.exe /s "CIS_Server2025_DC_Level1.inf"        # applies the template locally
-      auditpol /get /category:*    # confirm audit; secedit /export to confirm the rest
+  TESTING TIP: validate this template on a throwaway DOMAIN CONTROLLER in a lab domain:
+      .\Apply-CIS-Local.ps1 -Scope DC -WhatIf     # preview
+      .\Apply-CIS-Local.ps1 -Scope DC             # apply locally, then verify:
+      .\Test-CIS-Compliance.ps1 -Scope DC
+  (or LGPO.exe /s "CIS_Server2025_DC_Level1.inf" against LOCAL policy, same effect.)
+
+  DO NOT test this template on a standalone / workgroup box. It is written for a domain
+  controller and denies logon rights that, on a non-domain-joined host, match EVERY account -
+  stranding any host without console access. Workgroup hosts have their own benchmark: use
+  Apply-CIS-Local.ps1 -Scope Standalone.
 .PARAMETER TargetOU
   Distinguished name of the OU to link, e.g. "OU=Domain Controllers,DC=company,DC=com".
   LINKING IS OPT-IN: if you omit -TargetOU the GPO is built and configured but NOT linked
