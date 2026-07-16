@@ -90,6 +90,24 @@ The registry and firewall sides use **native cmdlets** (reliable). The INF + adv
 staged into SYSVOL with the **CSE registration** and **version bookkeeping** that GPMC performs
 internally — the part that must be exact, which the Create scripts do and then verify.
 
+### Configuration note — 2.3.17.2 UAC elevation prompt (`ConsentPromptBehaviorAdmin`)
+
+*User Account Control: Behavior of the elevation prompt for administrators in Admin Approval Mode.*
+CIS accepts **either** value and says so explicitly: *"The recommended state … is: Prompt for
+consent on the secure desktop. Configuring this setting to Prompt for credentials on the secure
+desktop also conforms to the benchmark"* (audit: `ConsentPromptBehaviorAdmin` = **1 or 2**). So both
+values below are fully CIS Level 1 compliant.
+
+| Host type | Value | Behavior | Rationale |
+|-----------|:-----:|----------|-----------|
+| **Standalone** | `2` | Prompt for **consent** (Yes/No) on the secure desktop | CIS's primary recommended value. Admins log in interactively; a password prompt on every elevation is high friction for no compliance gain. |
+| **Member** | `2` | Prompt for **consent** (Yes/No) on the secure desktop | Same as above, kept consistent with Standalone. |
+| **DC** | `1` | Prompt for **credentials** (password) on the secure desktop | Domain controllers are the highest-value target, so the stricter of the two accepted values is retained. |
+
+The secure desktop itself (2.3.17.7 `PromptOnSecureDesktop=1`) is enabled on **all** host types — it
+is the anti-spoofing control; the value above only chooses consent vs. credentials. This is a
+deliberate configuration choice, not a deviation: all three settings pass a CIS-CAT Level 1 audit.
+
 ---
 
 ## Files
