@@ -70,12 +70,17 @@ function Get-CISScopeFilter {
 }
 
 # Domain membership of the local host, used to catch "wrong profile for this box" before
-# secedit writes anything. DomainRole: 0/1 = workgroup, 2/3 = domain member, 4/5 = DC.
+# secedit writes anything. Win32_ComputerSystem.DomainRole:
+#   0 Standalone Workstation   1 Member Workstation
+#   2 Standalone Server        3 Member Server
+#   4 Backup DC                5 Primary DC
+# "Member" means domain-joined, so it is the ODD values (1, 3); the EVEN values (0, 2) are
+# workgroup / standalone. A standalone SERVER is role 2 - do not mistake it for a domain member.
 function Get-CISHostRole {
     $role = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).DomainRole
     switch ($role) {
-        { $_ -in 0, 1 } { 'Standalone'; break }
-        { $_ -in 2, 3 } { 'Member';     break }
+        { $_ -in 0, 2 } { 'Standalone'; break }
+        { $_ -in 1, 3 } { 'Member';     break }
         { $_ -in 4, 5 } { 'DC';         break }
         default         { 'Unknown' }
     }
