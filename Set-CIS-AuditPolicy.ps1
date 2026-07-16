@@ -6,15 +6,30 @@
    1) GPO  : copies the supplied audit.csv into the GPO's SYSVOL Audit folder and enables it.
    2) Local: applies each subcategory directly with auditpol.exe (for standalone/testing).
   Subcategory GUIDs are stable Windows constants.
+.PARAMETER Scope
+  Member | DC | Standalone.
+
+  Member/DC come from the CIS Windows Server 2025 Benchmark v2.0.0 table below. Standalone comes
+  from a DIFFERENT document - the CIS Stand-alone Benchmark v1.0.0 - and is loaded from
+  CIS-Standalone-Data.ps1. Both prescribe the same 27 subcategories, but under different
+  recommendation numbers (e.g. Security Group Management is 17.2.5 for Member and 17.2.2 for
+  Stand-alone), so the standalone set carries its own IDs and is not filtered out of this table.
 .NOTES
-  Requires section 2.3.2.1 'Force audit policy subcategory settings' = Enabled (set via INF).
+  Requires 'Force audit policy subcategory settings' = Enabled (set via INF; 2.3.2.1 in both
+  benchmarks).
 #>
 param(
-  [Parameter(Mandatory)][ValidateSet('Member','DC')] [string] $Scope,
+  [Parameter(Mandatory)][ValidateSet('Member','DC','Standalone')] [string] $Scope,
   [ValidateSet('Local','GpoCsv')] [string] $Mode = 'Local',
   [string] $GpoName,
   [string] $CsvPath
 )
+
+# GpoCsv stages into SYSVOL, which only exists in a domain. A workgroup host has no GPO to
+# stage into - fail here rather than at the Get-GPO call with a less obvious error.
+if ($Mode -eq 'GpoCsv' -and $Scope -eq 'Standalone') {
+  throw "Scope 'Standalone' cannot use -Mode GpoCsv: a workgroup host has no domain GPO/SYSVOL. Use -Mode Local (Apply-CIS-Local.ps1 -Scope Standalone does this for you)."
+}
 
 # CIS S2025 audit subcategories (Subcategory, GUID, auditpol flag)
 $Audit = @(
@@ -54,7 +69,15 @@ $Audit = @(
   @{ Id="17.9.5"; Sub="System Integrity"; Guid="{0CCE9212-69AE-11D9-BED3-505054503030}"; Setting="Success and Failure"; Flag="/success:enable /failure:enable"; Scope="Both" }
 )
 
-$applicable = $Audit | Where-Object { $_.Scope -eq 'Both' -or $_.Scope -eq $Scope }
+if ($Scope -eq 'Standalone') {
+    # Separate benchmark, separate numbering - load its own table rather than filtering this one.
+    $DataMod = Join-Path $PSScriptRoot 'CIS-Standalone-Data.ps1'
+    if (-not (Test-Path -LiteralPath $DataMod)) { throw "Missing required file: $DataMod" }
+    . $DataMod
+    $applicable = $CISStandaloneAudit
+} else {
+    $applicable = $Audit | Where-Object { $_.Scope -eq 'Both' -or $_.Scope -eq $Scope }
+}
 
 if ($Mode -eq 'Local') {
   Write-Host "Applying $($applicable.Count) audit subcategories locally via auditpol..." -ForegroundColor Cyan

@@ -158,7 +158,11 @@ $CISRegistrySettings = @(
   @{ Id="18.10.57.3.11.2"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"; Name="PerSessionTempDir"; Type="DWord"; Value=1; Scope="Both" }  # 'Do not use temporary folders per session' is set to 'Disabled'
   @{ Id="18.10.58.1"; Key="HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Feeds"; Name="DisableEnclosureDownload"; Type="DWord"; Value=1; Scope="Both" }  # 'Prevent downloading of enclosures' is set to 'Enabled'
   @{ Id="18.10.59.3"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search"; Name="AllowIndexingEncryptedStoresOrItems"; Type="DWord"; Value=0; Scope="Both" }  # 'Allow indexing of encrypted files' is set to 'Disabled'
-  @{ Id="18.10.77.2.1"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\System"; Name="EnableSmartScreen"; Type="DWord"; Value=1; Scope="Both" }  # 'Configure Windows Defender SmartScreen' is set to 'Enabled: Warn and 
+  @{ Id="18.10.77.2.1"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\System"; Name="EnableSmartScreen"; Type="DWord"; Value=1; Scope="Both" }  # 'Configure Windows Defender SmartScreen' is set to 'Enabled: Warn and
+  # 18.10.77.2.1 needs BOTH values: the benchmark states "a REG_DWORD value of 1 (EnableSmartScreen)
+  # and REG_SZ value of Block (ShellSmartScreenLevel)". Without the level, SmartScreen is on but
+  # users can still bypass the warning, which is the half the recommendation is actually about.
+  @{ Id="18.10.77.2.1"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\System"; Name="ShellSmartScreenLevel"; Type="String"; Value="Block"; Scope="Both" }  # 'Configure Windows Defender SmartScreen' - prevent bypass
   @{ Id="18.10.81.2"; Key="HKLM\SOFTWARE\Policies\Microsoft\WindowsInkWorkspace"; Name="AllowWindowsInkWorkspace"; Type="DWord"; Value=0; Scope="Both" }  # 'Allow Windows Ink Workspace' is set to 'Enabled: On, but disallow acc
   @{ Id="18.10.82.1"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer"; Name="EnableUserControl"; Type="DWord"; Value=0; Scope="Both" }  # 'Allow user control over installs' is set to 'Disabled'
   @{ Id="18.10.82.2"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer"; Name="AlwaysInstallElevated"; Type="DWord"; Value=0; Scope="Both" }  # 'Always install with elevated privileges' is set to 'Disabled'
@@ -176,6 +180,10 @@ $CISRegistrySettings = @(
   @{ Id="18.10.94.2.2"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"; Name="ScheduledInstallDay"; Type="DWord"; Value=0; Scope="Both" }  # 'Configure Automatic Updates: Scheduled install day' is set to '0 - Ev
   @{ Id="18.10.94.4.1"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="ManagePreviewBuildsPolicyValue"; Type="DWord"; Value=1; Scope="Both" }  # 'Manage preview builds' is set to 'Disabled'
   @{ Id="18.10.94.4.2"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="DeferQualityUpdates"; Type="DWord"; Value=1; Scope="Both" }  # 'Select when Quality Updates are received' is set to 'Enabled: 0 days'
+  # 18.10.94.4.2 needs BOTH values: the benchmark states "a REG_DWORD value of 1
+  # (DeferQualityUpdates) and 0 (DeferQualityUpdatesPeriodInDays)". DeferQualityUpdates alone
+  # turns deferral ON without setting the period, which is the opposite of 'Enabled: 0 days'.
+  @{ Id="18.10.94.4.2"; Key="HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"; Name="DeferQualityUpdatesPeriodInDays"; Type="DWord"; Value=0; Scope="Both" }  # 'Select when Quality Updates are received' - 0 days
   @{ Id="18.11.1"; Key="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp"; Name="DisableWpad"; Type="DWord"; Value=1; Scope="Both" }  # 'Disable HTTP proxy features: Disable WPAD' is set to 'Enabled: Checke
   @{ Id="18.11.2"; Key="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings"; Name="DisableProxyAuthenticationSchemes"; Type="DWord"; Value=256; Scope="Both" }  # 'Disable HTTP proxy features: Disable proxy authentication' is set to 
   @{ Id="19.5.1.1"; Key="HKCU\Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications"; Name="NoToastApplicationNotificationOnLockScreen"; Type="DWord"; Value=1; Scope="Both" }  # 'Turn off toast notifications on the lock screen' is set to 'Enabled'

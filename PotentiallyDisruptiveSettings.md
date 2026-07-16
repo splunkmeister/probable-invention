@@ -10,6 +10,34 @@ Legend of affected roles considered: Hyper-V Hosts, SQL Servers, IIS Servers, Ce
 
 ---
 
+## ⚠ Standalone (workgroup) hosts — read first
+
+**The table below rates impact for the Member/DC benchmark (v2.0.0).** Workgroup hosts use a
+different document — *Stand-alone Benchmark v1.0.0* — which already prescribes safe values for the
+settings that would otherwise strand them. Use `Apply-CIS-Local.ps1 -Scope Standalone`; see
+[`ExceptionsAndManualSteps.md` §4](ExceptionsAndManualSteps.md).
+
+**Never apply the Member profile to a workgroup host.** `S-1-5-113` (*Local account*) and
+`S-1-5-114` (*…member of Administrators group*) match **every account** there, not just the
+break-glass ones:
+
+| Setting | Member value (v2.0.0) | Stand-alone value (v1.0.0) | If you apply Member anyway |
+|---------|----------------------|---------------------------|---------------------------|
+| Deny log on through RDS | `Guests, Local account` (2.2.26) | **`Guests`** (2.2.20) | **RDP denied to every account.** Unrecoverable without console access (cloud VM, colo, headless). CIS: *"…**will** result in an inability to remotely administer the workstation."* |
+| Deny access from the network | `Guests, Local account and member of Administrators group` (2.2.21) | **`Guests`** (2.2.16) | WinRM, SMB admin shares and remote WMI denied to every admin. CIS: *"…**may** result in an inability to remotely administer the server."* |
+| Apply UAC restrictions to local accounts | `Enabled`, LATFP=0 (18.4.1) | **not in the benchmark** | Remote local admins get a filtered token with no elevation path (2.3.17.1 closes the RID-500 escape) |
+
+Three risks that are *specific to* standalone, because §1 governs the SAM directly instead of
+deferring to the Default Domain Policy:
+
+| Setting | Why it bites on a workgroup host | Mitigation |
+|---------|----------------------------------|------------|
+| **1.2.3** `AllowAdministratorLockout = Enabled` (+ 1.2.2 threshold = 5) | The **built-in Administrator can be locked out** by 5 bad passwords for 15 minutes. With RDP exposed this is remotely triggerable — and there may be no other admin to recover with. | Create a **second local admin account** before applying; keep console access; firewall RDP to an admin subnet. |
+| **NTP client** | No domain time hierarchy, so `NT5DS` never resolves and the clock drifts — silently degrading every §17 audit timestamp. | `w32tm /config /manualpeerlist:"time.windows.com,0x9" /syncfromflags:manual /update` |
+| **Windows LAPS** | Absent from the Stand-alone benchmark: *"Windows LAPS does not support standalone computers."* But standalone deny-rights are `Guests`-only, so local credentials **are** usable over the network — a shared local admin password turns one stolen hash into fleet-wide lateral movement. | Unique per-host admin password via a PAM/secrets tool; firewall the management ports ([§4.3](ExceptionsAndManualSteps.md)). |
+
+---
+
 | CIS ID | Recommendation | Desired | Affected Roles | Why it can break | Mitigation |
 |--------|----------------|---------|----------------|------------------|------------|
 | 1.2.2 | 'Account lockout threshold' is set to '5 or fewer inval | 5 or fewer invalid logon | SQL Servers, IIS Servers, Legacy applications | Account lockout threshold=5 - service/app-pool accounts can be locked out by repeated bad auth. | Use managed service accounts / app-pool identities exempt from interactive lockout; monitor lockout source. |
