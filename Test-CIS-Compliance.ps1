@@ -119,7 +119,10 @@ $RegistryChecks = @(
   @{ Id="2.3.15.1"; Hive="HKLM"; Path="SYSTEM\CurrentControlSet\Control\Session Manager\Kernel"; Name="ObCaseInsensitive"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="2.3.15.2"; Hive="HKLM"; Path="SYSTEM\CurrentControlSet\Control\Session Manager"; Name="ProtectionMode"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="2.3.17.1"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Name="FilterAdministratorToken"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
-  @{ Id="2.3.17.2"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Name="ConsentPromptBehaviorAdmin"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
+  # CIS 2.3.17.2 accepts EITHER value: "Prompt for consent on the secure desktop" (2, the recommended
+  # state) or "Prompt for credentials on the secure desktop" (1) - the benchmark audit passes on 1 or 2.
+  # Our INFs set 2 for Member/Standalone and 1 for DC, so accept both here to avoid a false FAIL.
+  @{ Id="2.3.17.2"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Name="ConsentPromptBehaviorAdmin"; Expected="2"; Accept=@("1"); Type="REG_DWORD"; Scope="Both" }
   @{ Id="2.3.17.3"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Name="ConsentPromptBehaviorUser"; Expected="0"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="2.3.17.4"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Name="EnableInstallerDetection"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
   @{ Id="2.3.17.5"; Hive="HKLM"; Path="SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Name="EnableSecureUIAPaths"; Expected="1"; Type="REG_DWORD"; Scope="Both" }
@@ -470,13 +473,18 @@ if ($Scope -eq 'Standalone') {
 function Test-RegistrySet($checks,$area){
     foreach($c in ($checks | Where-Object { $_.Scope -in $scopeFilter })){
         $exp  = @{ Expected = "$($c.Expected)"; IsDeviation = $false }
+        # Some controls accept more than one compliant value (e.g. 2.3.17.2 passes on 1 or 2). An
+        # optional Accept list holds the additional values; the displayed Expected shows all of them.
+        $accept  = @($c.Accept) | Where-Object { $_ }
+        $expDisp = if ($accept.Count) { (@($exp.Expected) + $accept) -join ' or ' } else { $exp.Expected }
         $full = "$($c.Hive):\$($c.Path)"
         $actual = $null
         try { $actual = (Get-ItemProperty -Path $full -Name $c.Name -ErrorAction Stop).$($c.Name) } catch { $actual = $null }
-        if ($null -eq $actual) { Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $exp.Expected "<not set>" "FAIL"; continue }
+        if ($null -eq $actual) { Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $expDisp "<not set>" "FAIL"; continue }
         $a = "$actual"
-        $res = if ($a -ne $exp.Expected) { "FAIL" } elseif ($exp.IsDeviation) { "DEVIATION" } else { "PASS" }
-        Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $exp.Expected $a $res
+        $ok = ($a -eq $exp.Expected) -or ($accept -contains $a)
+        $res = if (-not $ok) { "FAIL" } elseif ($exp.IsDeviation) { "DEVIATION" } else { "PASS" }
+        Add-Result $c.Id $area "$($c.Path)\$($c.Name)" $expDisp $a $res
     }
 }
 Test-RegistrySet $RegistryChecks "Registry"
