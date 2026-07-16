@@ -548,7 +548,12 @@ foreach($p in $fwProfiles){
 # ============================ report ============================
 $summary = $results | Group-Object Result | Sort-Object Name | ForEach-Object { "{0}={1}" -f $_.Name, $_.Count }
 Write-Host ""
-$results | Sort-Object @{e={[version]($_.Id -replace '[^0-9.]','0')}}, Area |
+# Build a lexicographically sortable key from the dotted Id. [version] can't be used because CIS
+# Ids have up to 5 components (e.g. 18.9.20.1.1) and non-numeric segments (e.g. firewall '9.Private').
+# Each segment is reduced to its digits (blank -> 0) and zero-padded to a fixed width so string sort
+# orders them numerically and keeps parents ahead of their children.
+$idSortKey = { ($_.Id -split '\.' | ForEach-Object { '{0:D6}' -f [int]("0" + ($_ -replace '\D','')) }) -join '.' }
+$results | Sort-Object @{e=$idSortKey}, Area |
     Format-Table Id, Area, Setting, Expected, Actual, Result -AutoSize | Out-Host
 Write-Host ("CIS S2025 L1 ({0}) compliance: {1}  (total {2})" -f $Scope, ($summary -join '  '), $results.Count) -ForegroundColor Cyan
 $fail = ($results | Where-Object Result -eq 'FAIL').Count
