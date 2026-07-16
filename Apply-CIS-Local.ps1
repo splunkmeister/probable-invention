@@ -119,6 +119,13 @@ if ($Scope -eq 'Standalone') {
 }
 foreach ($f in @($InfFile, $RegMod)) { if (-not (Test-Path -LiteralPath $f)) { throw "Missing required file: $f" } }
 if ($DataMod -and -not (Test-Path -LiteralPath $DataMod)) { throw "Missing required file: $DataMod" }
+# The audit module is delivered from the same directory. Treat it as REQUIRED unless -SkipAudit was
+# passed explicitly: a missing module here previously only warned, so section 17 could be silently
+# skipped while the run still reported success. Fail fast - before anything is written - so a partial
+# apply (secedit + registry applied, audit not) can never masquerade as a complete one.
+if (-not $SkipAudit -and -not (Test-Path -LiteralPath $AudMod)) {
+    throw "Missing required file: $AudMod  (needed for section 17 audit policy). Run from the package directory so it sits beside Apply-CIS-Local.ps1, or pass -SkipAudit to deliberately skip audit."
+}
 
 try { Start-Transcript -Path $LogPath -Append | Out-Null } catch {}
 $pi = Get-CISProfileInfo -Scope $Scope
@@ -263,12 +270,16 @@ if ($IncludeCurrentUser -and $user.Count) {
 
 # ---- 3) Advanced Audit Policy (local, via auditpol) -----------------------
 if (-not $SkipAudit) {
-    if (Test-Path -LiteralPath $AudMod) {
-        if ($PSCmdlet.ShouldProcess('local audit policy', 'apply section 17 subcategories')) {
-            & $AudMod -Scope $Scope -Mode Local
-            $summary.Audit = 'applied'
-        } else { Write-Host "[WhatIf] Would apply Advanced Audit Policy locally." -ForegroundColor Yellow; $summary.Audit = 'whatif' }
-    } else { Write-Warning "Set-CIS-AuditPolicy.ps1 not found - audit policy NOT applied."; $summary.Audit = 'missing' }
+    # Presence is guaranteed by the preflight above; this is a defensive backstop. A missing module
+    # here is a hard error, never a warning - section 17 must not be silently skipped.
+    if (-not (Test-Path -LiteralPath $AudMod)) { throw "Set-CIS-AuditPolicy.ps1 not found at $AudMod - cannot apply section 17 audit policy." }
+    if ($PSCmdlet.ShouldProcess('local audit policy', 'apply section 17 subcategories')) {
+        & $AudMod -Scope $Scope -Mode Local
+        $summary.Audit = 'applied'
+    } else { Write-Host "[WhatIf] Would apply Advanced Audit Policy locally." -ForegroundColor Yellow; $summary.Audit = 'whatif' }
+} else {
+    Write-Warning "-SkipAudit: section 17 audit policy NOT applied (explicitly skipped)."
+    $summary.Audit = 'skipped'
 }
 
 # ---- 4) Windows Firewall profiles (local store) ---------------------------
