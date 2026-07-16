@@ -553,11 +553,22 @@ Write-Host ""
 # Each segment is reduced to its digits (blank -> 0) and zero-padded to a fixed width so string sort
 # orders them numerically and keeps parents ahead of their children.
 $idSortKey = { ($_.Id -split '\.' | ForEach-Object { '{0:D6}' -f [int]("0" + ($_ -replace '\D','')) }) -join '.' }
-$results | Sort-Object @{e=$idSortKey}, Area |
-    Format-Table Id, Area, Setting, Expected, Actual, Result -AutoSize | Out-Host
+$sorted = $results | Sort-Object @{e=$idSortKey}, Area
+# -Wrap, not -AutoSize alone: in a narrow console AutoSize silently truncates Setting/Expected/Actual
+# with "..." so the very values you need to act on get cut off. Wrap keeps them whole.
+$sorted | Format-Table Id, Area, Setting, Expected, Actual, Result -AutoSize -Wrap | Out-Host
+
+# A dedicated FAIL-only table. The full table above can run to 200+ rows, so FAIL rows scroll off the
+# top and "see FAIL rows above" is not actionable. Repeat just the failures here, right next to the
+# count, so an operator sees exactly what to fix without scrolling.
+$failRows = @($sorted | Where-Object Result -eq 'FAIL')
+if ($failRows.Count) {
+    Write-Host ""
+    Write-Host ("FAILED settings ({0}) - these are NON-COMPLIANT:" -f $failRows.Count) -ForegroundColor Red
+    $failRows | Format-Table Id, Area, Setting, Expected, Actual -AutoSize -Wrap | Out-Host
+}
 Write-Host ("CIS S2025 L1 ({0}) compliance: {1}  (total {2})" -f $Scope, ($summary -join '  '), $results.Count) -ForegroundColor Cyan
-$fail = ($results | Where-Object Result -eq 'FAIL').Count
-if ($fail) { Write-Host "$fail setting(s) NON-COMPLIANT - see FAIL rows above." -ForegroundColor Red }
+if ($failRows.Count) { Write-Host "$($failRows.Count) setting(s) NON-COMPLIANT - listed in the FAILED settings table above." -ForegroundColor Red }
 else { Write-Host "No FAIL rows. Review any REVIEW/SKIP items manually." -ForegroundColor Green }
 
 # The standalone profile has a handful of recommendations that cannot be auto-verified because
