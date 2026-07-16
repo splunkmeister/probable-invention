@@ -41,6 +41,12 @@
 .PARAMETER SkipBackup
   Skip the pre-apply capture. Only sensible when imaging a throwaway VM you would rebuild
   rather than restore.
+.PARAMETER NoAdminLockout
+  Apply the template verbatim EXCEPT force CIS 1.2.3 AllowAdministratorLockout = 0, so the
+  built-in Administrator is exempt from account lockout. Regular accounts still lock out per
+  1.2.1/1.2.2. Use on a standalone host with no domain fallback and no second admin to avoid
+  locking out the only administrator. This is a deliberate deviation: Test-CIS-Compliance will
+  report 1.2.3 as FAIL by design.
 .PARAMETER Force
   Skip the domain-membership preflight that refuses a profile mismatched to this host.
 .EXAMPLE
@@ -54,7 +60,8 @@
   for domain accounts it must live in the Default Domain Policy (not a local apply). On a
   standalone host section 1 governs the SAM directly, so it is fully in force - including
   1.2.3 AllowAdministratorLockout, which CAN lock out the built-in Administrator. Keep a second
-  admin account or console access. See PotentiallyDisruptiveSettings.md.
+  admin account or console access, or pass -NoAdminLockout to exempt the built-in Administrator.
+  See PotentiallyDisruptiveSettings.md.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -66,6 +73,7 @@ param(
     [switch]  $SkipFirewall,
     [string]  $BackupPath,
     [switch]  $SkipBackup,
+    [switch]  $NoAdminLockout,
     [switch]  $Force
 )
 
@@ -172,14 +180,36 @@ if ($SkipBackup) {
 }
 
 # ---- 1) Security template via secedit /configure --------------------------
+# 1.2.3 AllowAdministratorLockout subjects the built-in Administrator to the account-lockout policy.
+# On a standalone host there is often no domain and no second admin, so enabling it can lock out the
+# ONLY administrator after LockoutBadCount bad passwords. -NoAdminLockout applies the template
+# verbatim EXCEPT it forces AllowAdministratorLockout = 0 - a deliberate, logged deviation from CIS
+# 1.2.3. Regular accounts are still locked out per 1.2.1/1.2.2; only the built-in Administrator is
+# exempt. The patched copy is built inside the apply branch so -WhatIf writes nothing.
 if ($PSCmdlet.ShouldProcess($InfFile, 'secedit /configure (SECURITYPOLICY USER_RIGHTS SERVICES)')) {
+    $cfgInf = $InfFile
+    if ($NoAdminLockout) {
+        $cfgInf  = Join-Path $env:windir "Temp\CIS-$Scope-NoAdminLockout.inf"
+        $found   = $false
+        $patched = foreach ($line in (Get-Content -LiteralPath $InfFile)) {
+            if ($line -match '^\s*AllowAdministratorLockout\s*=') { $found = $true; 'AllowAdministratorLockout = 0' }
+            else { $line }
+        }
+        # secedit only honours a Unicode (UTF-16 LE) template; any other encoding is silently ignored.
+        $patched | Set-Content -LiteralPath $cfgInf -Encoding Unicode
+        if ($found) { Write-Warning "-NoAdminLockout: forcing CIS 1.2.3 AllowAdministratorLockout = 0 - the built-in Administrator will NOT be locked out. This deviates from the benchmark." }
+        else        { Write-Warning "-NoAdminLockout: no AllowAdministratorLockout line found in $InfFile; nothing to override."; $cfgInf = $InfFile }
+    }
     $db     = Join-Path $env:windir "security\database\CIS-$Scope.sdb"
     $secLog = Join-Path $env:windir "Temp\CIS-secedit-$Scope.log"
-    & secedit.exe /configure /db $db /cfg $InfFile /areas SECURITYPOLICY USER_RIGHTS SERVICES /log $secLog /quiet
+    & secedit.exe /configure /db $db /cfg $cfgInf /areas SECURITYPOLICY USER_RIGHTS SERVICES /log $secLog /quiet
     $rc = $LASTEXITCODE
-    if ($rc -eq 0) { Write-Host "[+] Security template applied (secedit rc=0)" -ForegroundColor Green; $summary.INF = 'applied' }
+    if ($rc -eq 0) { Write-Host ("[+] Security template applied (secedit rc=0){0}" -f $(if ($NoAdminLockout) { ' - 1.2.3 forced to AllowAdministratorLockout=0' })) -ForegroundColor Green; $summary.INF = $(if ($NoAdminLockout) { 'applied (no admin lockout)' } else { 'applied' }) }
     else { Write-Warning "secedit returned $rc - see $secLog"; $summary.INF = "rc=$rc" }
-} else { Write-Host "[WhatIf] Would apply $InfFile via secedit /configure." -ForegroundColor Yellow; $summary.INF = 'whatif' }
+} else {
+    $extra = if ($NoAdminLockout) { ' with 1.2.3 AllowAdministratorLockout forced to 0 (-NoAdminLockout)' } else { '' }
+    Write-Host "[WhatIf] Would apply $InfFile via secedit /configure$extra." -ForegroundColor Yellow; $summary.INF = 'whatif'
+}
 
 # ---- 2) Administrative Template registry settings (local) -----------------
 . $RegMod   # loads $CISRegistrySettings or $CISStandaloneRegistry (no GroupPolicy dependency)
@@ -274,10 +304,16 @@ if (-not $SkipBackup -and $summary.Backup -notin 'skipped','whatif','failed') {
     Write-Host "  they are policy registry values; revert them via GPO, by re-imaging, or by hand." -ForegroundColor DarkYellow
 }
 
-if ($Scope -eq 'Standalone') {
+if ($NoAdminLockout) {
+    Write-Host "Note: -NoAdminLockout applied CIS 1.2.3 as AllowAdministratorLockout = 0 - the built-in" -ForegroundColor Yellow
+    Write-Host "      Administrator is EXEMPT from account lockout. Regular accounts still lock out per" -ForegroundColor Yellow
+    Write-Host "      1.2.1/1.2.2. This is a deliberate deviation, so Test-CIS-Compliance will report" -ForegroundColor Yellow
+    Write-Host "      1.2.3 as FAIL by design." -ForegroundColor Yellow
+} elseif ($Scope -eq 'Standalone') {
     Write-Host "Reminder: section 1 governs the local SAM directly on a workgroup host, including" -ForegroundColor Yellow
     Write-Host "          1.2.3 AllowAdministratorLockout - the built-in Administrator CAN now be locked" -ForegroundColor Yellow
     Write-Host "          out by 5 bad passwords. Confirm you have a second admin account or console access." -ForegroundColor Yellow
+    Write-Host "          Re-run with -NoAdminLockout to exempt the built-in Administrator from lockout." -ForegroundColor Yellow
 }
 Write-Host "A reboot is recommended so all security-template + audit settings fully settle." -ForegroundColor Cyan
 try { Stop-Transcript | Out-Null } catch {}
