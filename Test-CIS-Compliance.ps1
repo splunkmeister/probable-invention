@@ -526,7 +526,10 @@ foreach($c in ($PrivilegeChecks | Where-Object { $_.Scope -in $scopeFilter })){
 # 4) System Access (account/lockout policy)
 foreach($c in ($SystemAccessChecks | Where-Object { $_.Scope -in $scopeFilter })){
     $line = Get-SecLine $c.Token
-    $actual = if ($line) { ($line -split '=',2)[1].Trim() } else { "<not set>" }
+    # secedit /export writes string values quoted in the INF (e.g. NewAdministratorName = "laadmin"),
+    # while the expected value is unquoted. Strip surrounding double quotes so a correct account name
+    # does not read as a FAIL. Numeric settings are unquoted in the export and are unaffected.
+    $actual = if ($line) { (($line -split '=',2)[1].Trim()).Trim('"') } else { "<not set>" }
     $res = if ($actual -eq $c.Expected) { "PASS" } elseif ($actual -eq "<not set>") { "FAIL" } else { "FAIL" }
     Add-Result $c.Id "AccountPolicy" $c.Token $c.Expected $actual $res
 }
