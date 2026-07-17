@@ -90,6 +90,14 @@ The registry and firewall sides use **native cmdlets** (reliable). The INF + adv
 staged into SYSVOL with the **CSE registration** and **version bookkeeping** that GPMC performs
 internally — the part that must be exact, which the Create scripts do and then verify.
 
+> **§19 (User Configuration) is not force-applied on server OUs — by design.** The six §19 settings
+> are written into the GPO's User Configuration, but a server/computer OU does not apply user policy
+> to the computer, and this package does not enable loopback. They are low-value interactive-desktop
+> controls on a server; the machine-scope hardening (§1, §2, §5, §9, §17, §18) applies in full. A
+> CIS-CAT scan in an interactive server session reports the six §19 items as FAIL — that is expected.
+> To enforce them, enable loopback (Merge) on the GPO or link a user-targeted GPO to the users' OU.
+> See [`ExceptionsAndManualSteps.md` §5.1](ExceptionsAndManualSteps.md).
+
 ### Configuration note — 2.3.17.2 UAC elevation prompt (`ConsentPromptBehaviorAdmin`)
 
 *User Account Control: Behavior of the elevation prompt for administrators in Admin Approval Mode.*
@@ -353,8 +361,10 @@ exist to de-risk exactly this.
    CIS-CAT profile produces **false failures** — the documents prescribe different values (§4).
    Their IDs are not comparable either.
 3. **Site-specific values** (renamed accounts, logon banners, firewall log names) are placeholders —
-   set them per `ExceptionsAndManualSteps.md` §1. On a standalone host the account rename touches
-   the local SAM account you may be logged in with; set it *before* applying.
+   set them per `ExceptionsAndManualSteps.md` §1. The **account renames** (2.3.1.3/2.3.1.4) are now
+   config-driven: pass `-AdminName`/`-GuestName` to `Apply-CIS-Local.ps1` or `Create-CIS-*-GPO.ps1`
+   (the scripts warn if left at the predictable placeholder). On a standalone host the account rename
+   touches the local SAM account you may be logged in with; set it *before* applying.
 4. **List/SDDL settings** (null-session pipes, remote SAM, Hardened UNC Paths, Defender ASR rules) are
    not guessed — see §2. Deploy ASR and NTLM restrictions in **audit mode** first.
 5. **Account/lockout policy (§1)** on a domain is domain-wide only via the **Default Domain
