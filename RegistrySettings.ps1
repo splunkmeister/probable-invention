@@ -201,6 +201,10 @@ function Set-CISRegistrySettings {
         [Parameter(Mandatory)][ValidateSet('Member','DC')][string] $Scope
     )
     Import-Module GroupPolicy -ErrorAction Stop
+    # HKCU rows are the CIS section-19 (User Configuration) settings. Set-GPRegistryValue writes
+    # them into the GPO's USER Configuration, which does NOT apply on a server/computer OU without
+    # loopback. This is intentional - section 19 is not force-applied on servers. See
+    # ExceptionsAndManualSteps.md 5.1 and the note in the Create-CIS-*-GPO.ps1 scripts.
     $scopeFilter = if ($Scope -eq 'DC') { @('Both','DC') } else { @('Both','MS') }
     $applicable  = $CISRegistrySettings | Where-Object { $_.Scope -in $scopeFilter }
     Write-Host "Registry-backed settings for GPO '$GpoName' ($Scope): $($applicable.Count)" -ForegroundColor Cyan

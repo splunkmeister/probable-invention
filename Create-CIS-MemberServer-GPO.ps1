@@ -53,6 +53,8 @@ param(
     [string] $TargetOU,                  # omit to build without linking (safe default)
     [switch] $NoLink,                    # never link, even if -TargetOU is given
     [string] $LogPath,                   # log file; default: .\Logs\Create-CIS-<scope>-<timestamp>.log
+    [string] $AdminName,                 # CIS 2.3.1.3 rename: site-specific Administrator name (unset = template placeholder)
+    [string] $GuestName,                 # CIS 2.3.1.4 rename: site-specific Guest name
     [string] $ScriptRoot = $PSScriptRoot
 )
 
@@ -86,6 +88,11 @@ foreach ($f in @($InfFile, $AuditCsv, $RegMod)) {
 $Domain  = Get-ADDomain
 $DnsRoot = $Domain.DNSRoot
 
+# CIS 2.3.1.3/2.3.1.4: the template ships a PLACEHOLDER Administrator/Guest name. A shared default is
+# predictable - call it out so it is never staged silently. -AdminName/-GuestName set site values.
+if (-not $AdminName) { Write-Warning "CIS 2.3.1.3: -AdminName not set - the template's placeholder Administrator name is staged into the GPO. Pass -AdminName '<non-obvious name>' for a site-specific value." }
+if (-not $GuestName) { Write-Warning "CIS 2.3.1.4: -GuestName not set - the template's placeholder Guest name is staged into the GPO. Pass -GuestName '<non-obvious name>' for a site-specific value." }
+
 # ---- 1) Create or reuse the GPO -------------------------------------------
 #       With -WhatIf the GPO is NOT created; later steps print their plan and skip.
 $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
@@ -101,6 +108,15 @@ if ($gpo) {
 # ---- 2) Administrative Templates / registry (native; honours -WhatIf) ------
 . $RegMod
 Set-CISRegistrySettings -GpoName $GpoName -Scope $Scope
+
+# NOTE - CIS section 19 (User Configuration): the six HKCU settings are written into this GPO's
+# USER Configuration, but this GPO is linked to a SERVER/computer OU, where user policy does not
+# apply to the computer. So section 19 is NOT force-applied here - by design. They are low-value
+# interactive-desktop controls on a server, and forcing them would require User Group Policy
+# loopback processing (avoided, especially on DCs). A CIS-CAT scan in an interactive session will
+# report the six section-19 items as FAIL; that is expected. To enforce them, enable loopback
+# (Merge) on this GPO or link a user-targeted GPO to the users' OU. See ExceptionsAndManualSteps.md 5.1.
+Write-Host "[i] Section 19 (user-scope) settings are in the GPO but NOT force-applied on a server OU (by design - see ExceptionsAndManualSteps.md 5.1)." -ForegroundColor Yellow
 
 # ---- 3) Windows Firewall profiles, section 9 (native) ---------------------
 if ($PSCmdlet.ShouldProcess("Firewall profiles for '$GpoName'", 'Configure 9.1-9.3')) {
@@ -153,7 +169,21 @@ if (-not $gpo) {
     $secDir  = Join-Path $polPath 'Machine\Microsoft\Windows NT\SecEdit'
     $audDir  = Join-Path $polPath 'Machine\Microsoft\Windows NT\Audit'
     New-Item -ItemType Directory -Force -Path $secDir, $audDir | Out-Null
-    Copy-Item -LiteralPath $InfFile  -Destination (Join-Path $secDir 'GptTmpl.inf') -Force
+    # CIS 2.3.1.3/2.3.1.4 account renames: patch a temp copy of the INF when -AdminName/-GuestName
+    # is supplied, then stage that; otherwise stage the template verbatim. secedit requires UTF-16 LE.
+    $infSource = $InfFile
+    if ($AdminName -or $GuestName) {
+        $infSource = Join-Path ([System.IO.Path]::GetTempPath()) "CIS-$Scope-GptTmpl.inf"
+        $patched = foreach ($line in (Get-Content -LiteralPath $InfFile)) {
+            if     ($AdminName -and $line -match '^\s*NewAdministratorName\s*=') { "NewAdministratorName = `"$AdminName`"" }
+            elseif ($GuestName -and $line -match '^\s*NewGuestName\s*=')          { "NewGuestName = `"$GuestName`"" }
+            else { $line }
+        }
+        $patched | Set-Content -LiteralPath $infSource -Encoding Unicode
+        if ($AdminName) { Write-Host "[+] Administrator account will be renamed to '$AdminName' (CIS 2.3.1.3)." -ForegroundColor Green }
+        if ($GuestName) { Write-Host "[+] Guest account will be renamed to '$GuestName' (CIS 2.3.1.4)." -ForegroundColor Green }
+    }
+    Copy-Item -LiteralPath $infSource -Destination (Join-Path $secDir 'GptTmpl.inf') -Force
     Copy-Item -LiteralPath $AuditCsv -Destination (Join-Path $audDir 'audit.csv')  -Force
     Write-Host "[+] Staged GptTmpl.inf and audit.csv into SYSVOL" -ForegroundColor Green
 

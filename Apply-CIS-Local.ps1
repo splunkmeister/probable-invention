@@ -68,6 +68,8 @@ param(
     [Parameter(Mandatory)][ValidateSet('Member','DC','Standalone')][string] $Scope,
     [string]  $ScriptRoot = $PSScriptRoot,
     [string]  $LogPath = "$env:windir\Temp\CIS-Apply-$Scope.log",
+    [string]  $AdminName,             # CIS 2.3.1.3 rename: site-specific Administrator name (leave unset = template placeholder)
+    [string]  $GuestName,             # CIS 2.3.1.4 rename: site-specific Guest name
     [switch]  $IncludeCurrentUser,
     [switch]  $SkipAudit,
     [switch]  $SkipFirewall,
@@ -193,19 +195,32 @@ if ($SkipBackup) {
 # verbatim EXCEPT it forces AllowAdministratorLockout = 0 - a deliberate, logged deviation from CIS
 # 1.2.3. Regular accounts are still locked out per 1.2.1/1.2.2; only the built-in Administrator is
 # exempt. The patched copy is built inside the apply branch so -WhatIf writes nothing.
+# CIS 2.3.1.3/2.3.1.4 rename the built-in Administrator/Guest accounts. The template ships a
+# PLACEHOLDER name (CIS-Admin/CIS-Guest); a shared default is predictable, which partly defeats the
+# control. -AdminName/-GuestName override it with a site-specific value. Not passing them is allowed
+# (keeps -WhatIf / unattended runs working) but is called out so the placeholder is never shipped silently.
+if (-not $AdminName) { Write-Warning "CIS 2.3.1.3: -AdminName not set - the template's placeholder Administrator name is applied. Pass -AdminName '<non-obvious name>' for a site-specific value." }
+if (-not $GuestName) { Write-Warning "CIS 2.3.1.4: -GuestName not set - the template's placeholder Guest name is applied. Pass -GuestName '<non-obvious name>' for a site-specific value." }
 if ($PSCmdlet.ShouldProcess($InfFile, 'secedit /configure (SECURITYPOLICY USER_RIGHTS SERVICES)')) {
     $cfgInf = $InfFile
-    if ($NoAdminLockout) {
-        $cfgInf  = Join-Path $env:windir "Temp\CIS-$Scope-NoAdminLockout.inf"
-        $found   = $false
+    # Patch a temp copy when any of the overrides is in play (all applied in one pass).
+    if ($NoAdminLockout -or $AdminName -or $GuestName) {
+        $cfgInf     = Join-Path $env:windir "Temp\CIS-$Scope-patched.inf"
+        $foundLock  = $false; $foundAdmin = $false; $foundGuest = $false
         $patched = foreach ($line in (Get-Content -LiteralPath $InfFile)) {
-            if ($line -match '^\s*AllowAdministratorLockout\s*=') { $found = $true; 'AllowAdministratorLockout = 0' }
+            if     ($NoAdminLockout -and $line -match '^\s*AllowAdministratorLockout\s*=') { $foundLock  = $true; 'AllowAdministratorLockout = 0' }
+            elseif ($AdminName      -and $line -match '^\s*NewAdministratorName\s*=')      { $foundAdmin = $true; "NewAdministratorName = `"$AdminName`"" }
+            elseif ($GuestName      -and $line -match '^\s*NewGuestName\s*=')               { $foundGuest = $true; "NewGuestName = `"$GuestName`"" }
             else { $line }
         }
         # secedit only honours a Unicode (UTF-16 LE) template; any other encoding is silently ignored.
         $patched | Set-Content -LiteralPath $cfgInf -Encoding Unicode
-        if ($found) { Write-Warning "-NoAdminLockout: forcing CIS 1.2.3 AllowAdministratorLockout = 0 - the built-in Administrator will NOT be locked out. This deviates from the benchmark." }
-        else        { Write-Warning "-NoAdminLockout: no AllowAdministratorLockout line found in $InfFile; nothing to override."; $cfgInf = $InfFile }
+        if ($NoAdminLockout) {
+            if ($foundLock) { Write-Warning "-NoAdminLockout: forcing CIS 1.2.3 AllowAdministratorLockout = 0 - the built-in Administrator will NOT be locked out. This deviates from the benchmark." }
+            else            { Write-Warning "-NoAdminLockout: no AllowAdministratorLockout line found in $InfFile; nothing to override." }
+        }
+        if ($AdminName) { if ($foundAdmin) { Write-Host "[+] Administrator account will be renamed to '$AdminName' (CIS 2.3.1.3)." -ForegroundColor Green } else { Write-Warning "-AdminName: no NewAdministratorName line found in $InfFile; name not changed." } }
+        if ($GuestName) { if ($foundGuest) { Write-Host "[+] Guest account will be renamed to '$GuestName' (CIS 2.3.1.4)." -ForegroundColor Green } else { Write-Warning "-GuestName: no NewGuestName line found in $InfFile; name not changed." } }
     }
     $db     = Join-Path $env:windir "security\database\CIS-$Scope.sdb"
     $secLog = Join-Path $env:windir "Temp\CIS-secedit-$Scope.log"

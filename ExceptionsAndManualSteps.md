@@ -21,8 +21,8 @@ Applies to **all three** profiles unless noted.
 
 | Setting | Placeholder | What to do |
 |---------|-------------|-----------|
-| Rename administrator account (Member 2.3.1.3 / Standalone 2.3.1.3) | `CIS-Admin` | Choose a non-obvious name. On a **standalone** host this renames the local SAM account you may be logged in with — set it before applying. |
-| Rename guest account (Member 2.3.1.4 / Standalone 2.3.1.4) | `CIS-Guest` | Choose a non-obvious name. |
+| Rename administrator account (Member 2.3.1.3 / Standalone 2.3.1.3) | `CIS-Admin` | Pass **`-AdminName '<non-obvious name>'`** to `Apply-CIS-Local.ps1` / `Create-CIS-*-GPO.ps1` — it patches the INF before apply/staging. Left unset, the scripts **warn** and use the placeholder (a shared default is itself predictable, so set a site value). On a **standalone** host this renames the local SAM account you may be logged in with — set it before applying. |
+| Rename guest account (Member 2.3.1.4 / Standalone 2.3.1.4) | `CIS-Guest` | Pass **`-GuestName '<non-obvious name>'`**. Same behavior — the scripts warn if it is left at the placeholder. |
 | Logon banner text (Standalone 2.3.7.4) | *not set* | `LegalNoticeText`, REG_MULTI_SZ — your legal wording. |
 | Logon banner title (Standalone 2.3.7.5) | *not set* | `LegalNoticeCaption`, REG_SZ. |
 | Firewall log file names (§9) | default paths | Per-profile log names are site-specific. |
@@ -179,7 +179,51 @@ state as one encodable value — including **18.10.14.1**, where the benchmark t
 - **Windows Firewall (§9):** `Set-NetFirewallProfile`. Member/DC = Domain+Private+Public;
   Standalone = Private+Public.
 - **Administrative Templates (§18–19):** `RegistrySettings.ps1` (Member/DC) or
-  `RegistrySettings-Standalone.ps1` (Standalone).
+  `RegistrySettings-Standalone.ps1` (Standalone). See 5.1 for how the **§19 user-scope**
+  settings are delivered on a server OU.
+
+### 5.1 §19 user-scope settings are NOT force-applied on server OUs (by design)
+
+CIS §19 is the benchmark's **User Configuration** section — interactive-desktop settings such as
+lock-screen toasts, Windows Spotlight and attachment handling. The Member/DC package carries all
+six:
+
+| CIS ID | Setting |
+|--------|---------|
+| 19.5.1.1  | Turn off toast notifications on the lock screen |
+| 19.7.5.1  | Do not preserve zone information in file attachments |
+| 19.7.5.2  | Notify antivirus programs when opening attachments |
+| 19.7.8.1  | Configure Windows spotlight on lock screen |
+| 19.7.8.2  | Do not suggest third-party content in Windows spotlight |
+| 19.7.26.1 | Prevent users from sharing files within their profile |
+
+`Set-CISRegistrySettings` writes these into the GPO's **User Configuration** (they are `HKCU`
+values). But these GPOs are linked to **server / computer OUs**, and User Configuration applies to
+**user objects in the OU**, not to the computer. A server OU holds computers, so **§19 does not
+take effect there by default** — and this package does **not** enable User Group Policy loopback
+processing to force it.
+
+**This is a deliberate choice, not a gap:**
+
+- §19 are interactive-desktop controls with low value on a server, where the only interactive
+  users are admins whose accounts live in a different OU.
+- Forcing them on a server would require **loopback processing (Merge/Replace)**, which changes how
+  user policy resolves for everyone who logs on to that server — commonly avoided, and especially
+  so on **domain controllers**.
+- The machine-scope hardening that actually protects a server — §1, §2, §5, §9, §17, §18 — is
+  applied in full.
+
+**Consequence for assessment:** a CIS-CAT scan run in an **interactive session on the server**
+reports these six as **FAIL**, because the server GPO does not deliver user policy to that session.
+That result is **expected**, not a defect.
+
+**If you do want §19 enforced** on the accounts that use these servers, pick one:
+
+- Enable **User Group Policy loopback processing = Merge** on the CIS GPO (Computer Configuration →
+  Administrative Templates → System → Group Policy). Least-surprising loopback mode; the six §19
+  settings then apply on top of the user's normal policy in any session on the linked servers.
+- Or link a **user-targeted GPO** carrying these six to the OU that contains the accounts which log
+  on to these servers (delivers §19 wherever those users log on, no loopback needed).
 
 ## 6. Recommended deployment sequence
 
